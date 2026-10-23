@@ -1,0 +1,790 @@
+From 97aa605a97014b31161317d4bc3ce5b2a717f70e Mon Sep 17 00:00:00 2001
+From: Minilator <dev@minilator.local>
+Date: Thu, 22 Oct 2026 17:18:16 +0000
+Subject: [PATCH] feat: Transform into Minilator (minimalist UI + Turbo FPS
+ optimizations)
+
+---
+ .github/workflows/build-minilator.yml         |  62 ++++++++++
+ README.md                                     |  96 +++++++++++---
+ app/build.gradle                              |   2 +-
+ .../main/java/com/winlator/MainActivity.java  |   2 +-
+ .../java/com/winlator/ShortcutsFragment.java  |  40 ++++++
+ .../com/winlator/XServerDisplayActivity.java  |   6 +
+ .../java/com/winlator/box64/Box64Preset.java  |   3 +-
+ .../winlator/box64/Box64PresetManager.java    |  24 +++-
+ .../com/winlator/container/Container.java     |  19 ++-
+ .../winlator/container/ContainerManager.java  |  29 +++++
+ .../winlator/contentdialog/AboutDialog.java   |   5 +-
+ .../contentdialog/DXVKConfigDialog.java       |   9 +-
+ .../contentdialog/TurnipConfigDialog.java     |   7 +-
+ .../java/com/winlator/core/FileUtils.java     |  39 +++++-
+ .../java/com/winlator/core/GameImporter.java  | 117 ++++++++++++++++++
+ .../xenvironment/RootFSInstaller.java         |   4 +
+ app/src/main/res/menu/main_menu.xml           |   2 +-
+ app/src/main/res/menu/shortcuts_menu.xml      |   6 +
+ app/src/main/res/values/strings.xml           |  10 +-
+ 19 files changed, 445 insertions(+), 37 deletions(-)
+ create mode 100644 .github/workflows/build-minilator.yml
+ create mode 100644 app/src/main/java/com/winlator/core/GameImporter.java
+
+diff --git a/.github/workflows/build-minilator.yml b/.github/workflows/build-minilator.yml
+new file mode 100644
+index 0000000..1a1d762
+--- /dev/null
++++ b/.github/workflows/build-minilator.yml
+@@ -0,0 +1,62 @@
++name: Build Minilator APK
++
++on:
++  push:
++    branches: [ main, master ]
++    tags:
++      - 'v*'
++  pull_request:
++    branches: [ main, master ]
++  workflow_dispatch:
++
++jobs:
++  build:
++    name: Build Minilator ARM64 APK
++    runs-on: ubuntu-latest
++
++    steps:
++      - name: Checkout Code
++        uses: actions/checkout@v4
++        with:
++          submodules: recursive
++
++      - name: Set up JDK 17
++        uses: actions/setup-java@v4
++        with:
++          java-version: '17'
++          distribution: 'temurin'
++          cache: 'gradle'
++
++      - name: Set up Android NDK
++        uses: nttld/setup-ndk@v1
++        with:
++          ndk-version: r24
++          link-to-sdk: true
++
++      - name: Grant Execute Permission for Gradlew
++        run: chmod +x ./gradlew
++
++      - name: Build Minilator APK (Debug)
++        run: ./gradlew assembleDebug --stacktrace
++
++      - name: Upload Minilator APK Artifact
++        uses: actions/upload-artifact@v4
++        with:
++          name: Minilator-v1.0-arm64-debug
++          path: app/build/outputs/apk/debug/*.apk
++
++      - name: Create GitHub Release (On Tag)
++        if: startsWith(github.ref, 'refs/tags/v')
++        uses: softprops/action-gh-release@v2
++        with:
++          files: app/build/outputs/apk/debug/*.apk
++          name: Minilator Release ${{ github.ref_name }}
++          body: |
++            ### Minilator - Minimalist High-Performance Winlator Fork
++            - **Minimalist Console UI:** Game Library first, zero Windows desktop clutter.
++            - **1-Click Game Importer:** Tap `+` to add any `.exe` from storage.
++            - **Turbo Box64 Dynarec:** Mega-block JIT translation with fast hardware NaN/rounding.
++            - **Asynchronous DXVK GPL:** Background Vulkan shader compilation to eliminate stutter.
++            - **Intelligent CPU Affinity:** Excludes slow efficiency cores to stabilize 60 FPS.
++        env:
++          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+diff --git a/README.md b/README.md
+index 892ad59..fbaf8da 100644
+--- a/README.md
++++ b/README.md
+@@ -1,22 +1,84 @@
+-<p align="center">
+-	<img src="logo.png" width="376" height="128" alt="Winlator Logo" />
+-</p>
++# Minilator ⚡🎮
+ 
+-# Winlator
++**Minilator** is a streamlined, high-performance fork of [Winlator](https://github.com/brunodev85/winlator). It is engineered for gamers who want a **minimalist, pick-up-and-play console experience** without technical container wizardry, paired with **maximum FPS and frame pacing stability**.
+ 
+-Winlator is an Android application that lets you to run Windows (x86_64) applications with Wine and Box86/Box64.<br>
+-This repository stores the latest updates for the Winlator app source.<br>
+-For more information and releases, please visit the main repository: https://github.com/brunodev85/winlator
++---
+ 
+-# Credits and Third-party apps
++## 🌟 Key Features
+ 
+-- GLIBC Patches by [Termux Pacman](https://github.com/termux-pacman/glibc-packages)
+-- Wine ([winehq.org](https://www.winehq.org/))
+-- Box86/Box64 by [ptitseb](https://github.com/ptitSeb)
+-- Mesa (Turnip/Zink/VirGL) ([mesa3d.org](https://www.mesa3d.org))
+-- DXVK ([github.com/doitsujin/dxvk](https://github.com/doitsujin/dxvk))
+-- VKD3D ([gitlab.winehq.org/wine/vkd3d](https://gitlab.winehq.org/wine/vkd3d))
+-- CNC DDraw ([github.com/FunkyFr3sh/cnc-ddraw](https://github.com/FunkyFr3sh/cnc-ddraw))
++### 1. Minimalist "Pick Up & Play" Interface
++* **Game Library First:** Bypasses complex container dashboards and boots directly into a clean, card-based Game Library.
++* **1-Click Game Importer:** Tap the **`+`** icon on the top bar to select any `.exe` from your storage or Downloads. Minilator automatically:
++  * Extracts the game's icon directly from the executable.
++  * Detects the game's title.
++  * Links it to the optimized background container.
++* **Direct Fullscreen Launch (Zero Windows Desktop):** Games launch straight into fullscreen borderless mode (`nogui`). No tiny Windows XP taskbars or virtual mouse trackpads required.
++* **Clean Navigation Drawer:** Unnecessary menus are hidden or grouped under "Containers (Advanced)", leaving only what matters: your games, controls, and essential settings.
+ 
+-Special thanks to all the developers involved in these projects.<br>
+-Thank you to all the people who believe in this project.
+\ No newline at end of file
++### 2. High-FPS & Performance Engine
++* **Turbo Box64 Dynarec Preset (Default):**
++  * `BOX64_DYNAREC_BIGBLOCK=3`: Mega-block JIT compilation for reduced translation jumps.
++  * `BOX64_DYNAREC_STRONGMEM=0`: Relaxed memory barriers (significant boost in 3D titles).
++  * `BOX64_DYNAREC_SAFEFLAGS=0`: Skips redundant x86 flag recalculations in JIT loops.
++  * Hardware-accelerated ARMv8 NaN handling (`FASTNAN=1`) and hardware rounding (`FASTROUND=1`).
++  * `BOX64_DYNAREC_CALLRET=1` & `BOX64_DYNAREC_FORWARD=1024`: Fast branch/return prediction.
++  * Zero logging overhead (`BOX64_NOBANNER=1`, `BOX64_LOG=0`).
++* **Intelligent CPU Core Affinity (Big & Prime Cores Only):**
++  * Automatically detects Big/LITTLE core topology (e.g. Snapdragon, Dimensity, Tensor).
++  * Pins emulation threads to **Cores 4–7 only**, preventing Cortex-A55/A510 Little cores from bottlenecking framerates.
++* **Async DXVK & GPL Shader Stutter Elimination:**
++  * Enabled `dxvk.gpl = True` and `dxvk.enableAsync = True` to compile shaders smoothly in the background.
++  * `dxgi.syncInterval = 0` for uncapped frame delivery.
++  * `d3d11.maxTessFactor = 8` to clamp performance-draining tessellation on mobile GPUs.
++* **Turnip Driver Acceleration:**
++  * `TU_DEBUG=sysmem,deck_emu,noconform,flushall` with `MESA_VK_WSI_PRESENT_MODE=mailbox` for low-latency triple buffering.
++* **Process Priority:**
++  * Android process elevated to `Process.THREAD_PRIORITY_URGENT_DISPLAY` to prevent OS CPU throttling during gaming sessions.
++
++---
++
++## 🚀 How to Add and Play Games
++
++1. Place your PC game folder or installer in your device's **Downloads** or **Internal Storage**.
++2. Open **Minilator**.
++3. Tap the **`+` (Add Game)** icon on the top action bar.
++4. Select the game's `.exe` file.
++5. The game will instantly appear as a card in your **Game Library** with its authentic icon.
++6. Tap the game card to play immediately!
++
++---
++
++## 🛠️ Building Minilator
++
++### Option A: Cloud Build with GitHub Actions (Recommended)
++This repository includes a pre-configured `.github/workflows/build-minilator.yml`:
++1. Push this repository to your GitHub account.
++2. Go to the **Actions** tab on GitHub.
++3. Select **Build Minilator APK** and click **Run workflow**.
++4. Once completed (approx. 3–5 minutes), download the ready-to-install `.apk` artifact directly!
++
++### Option B: Local Android Studio Build
++* **JDK:** OpenJDK 17
++* **Android SDK:** Compile SDK 35, Min SDK 26, Target SDK 28
++* **Android NDK:** Version `24.0.8215888` (NDK r24)
++* **CMake:** Version `3.22.1`
++
++Run from the terminal:
++```bash
++./gradlew assembleDebug
++```
++The APK will be generated at:
++`app/build/outputs/apk/debug/app-debug.apk`
++
++---
++
++## 📜 Credits & Upstream Projects
++
++* **Upstream Winlator:** [brunodev85/winlator](https://github.com/brunodev85/winlator)
++* **Box86 / Box64:** [ptitseb](https://github.com/ptitSeb)
++* **Wine:** [winehq.org](https://www.winehq.org/)
++* **DXVK:** [doitsujin/dxvk](https://github.com/doitsujin/dxvk)
++* **VKD3D:** [WineHQ VKD3D](https://gitlab.winehq.org/wine/vkd3d)
++* **Mesa (Turnip/Zink/VirGL):** [mesa3d.org](https://www.mesa3d.org/)
++* **GLIBC Patches:** [Termux Pacman](https://github.com/termux-pacman/glibc-packages)
++* **CNC DDraw:** [FunkyFr3sh/cnc-ddraw](https://github.com/FunkyFr3sh/cnc-ddraw)
+diff --git a/app/build.gradle b/app/build.gradle
+index 7690275..96ba87d 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -9,7 +9,7 @@ android {
+         minSdkVersion 26
+         targetSdkVersion 28
+         versionCode 33
+-        versionName "11.2"
++        versionName "1.0-minilator"
+     }
+ 
+     buildTypes {
+diff --git a/app/src/main/java/com/winlator/MainActivity.java b/app/src/main/java/com/winlator/MainActivity.java
+index dd126b1..585ce87 100644
+--- a/app/src/main/java/com/winlator/MainActivity.java
++++ b/app/src/main/java/com/winlator/MainActivity.java
+@@ -72,7 +72,7 @@ public class MainActivity extends AppCompatActivity implements NavigationView.On
+             navigationView.setCheckedItem(R.id.menu_item_input_controls);
+         }
+         else {
+-            boolean showShortcutsFirst = preferences.getBoolean("show_shortcuts_first", false);
++            boolean showShortcutsFirst = preferences.getBoolean("show_shortcuts_first", true);
+             int selectedMenuItemId = intent.getIntExtra("selected_menu_item_id", 0);
+             int menuItemId = selectedMenuItemId > 0 ? selectedMenuItemId : (showShortcutsFirst ? R.id.menu_item_shortcuts : R.id.menu_item_containers);
+ 
+diff --git a/app/src/main/java/com/winlator/ShortcutsFragment.java b/app/src/main/java/com/winlator/ShortcutsFragment.java
+index ca3c83b..f189b2f 100644
+--- a/app/src/main/java/com/winlator/ShortcutsFragment.java
++++ b/app/src/main/java/com/winlator/ShortcutsFragment.java
+@@ -26,6 +26,7 @@ import com.winlator.contentdialog.CreateFolderDialog;
+ import com.winlator.contentdialog.ShortcutSettingsDialog;
+ import com.winlator.core.AppUtils;
+ import com.winlator.core.ArrayUtils;
++import com.winlator.core.GameImporter;
+ 
+ import java.io.File;
+ import java.util.ArrayList;
+@@ -42,10 +43,20 @@ public class ShortcutsFragment extends BaseFileManagerFragment<Shortcut> {
+     public void refreshContent() {
+         super.refreshContent();
+ 
++        if (manager.getContainers().isEmpty()) {
++            manager.createDefaultContainerAsync((container) -> {
++                if (isAdded()) refreshContent();
++            });
++            return;
++        }
++
+         Shortcut selectedFolder = !folderStack.isEmpty() ? folderStack.peek() : null;
+         ArrayList<Shortcut> shortcuts = manager.loadShortcuts(selectedFolder);
+         recyclerView.setAdapter(new ShortcutsAdapter(shortcuts));
+         emptyTextView.setVisibility(shortcuts.isEmpty() ? View.VISIBLE : View.GONE);
++        if (shortcuts.isEmpty()) {
++            emptyTextView.setText("Welcome to Minilator\n\nTap '+' above to add your PC games (.exe)");
++        }
+     }
+ 
+     @Override
+@@ -110,9 +121,38 @@ public class ShortcutsFragment extends BaseFileManagerFragment<Shortcut> {
+             createFolder();
+             return true;
+         }
++        else if (itemId == R.id.menu_item_add_game) {
++            openAddGamePicker();
++            return true;
++        }
+         else return super.onOptionsItemSelected(menuItem);
+     }
+ 
++    private void openAddGamePicker() {
++        MainActivity activity = (MainActivity)getActivity();
++        if (activity == null) return;
++        activity.setOpenFileCallback((uri) -> {
++            if (uri != null) {
++                activity.preloaderDialog.show(R.string.starting_up);
++                GameImporter.importGame(getContext(), uri, (success) -> {
++                    activity.preloaderDialog.closeOnUiThread();
++                    if (success) {
++                        refreshContent();
++                        AppUtils.showToast(getContext(), "Game added to library!");
++                    }
++                    else {
++                        AppUtils.showToast(getContext(), "Could not import game. Please select a valid .exe");
++                    }
++                });
++            }
++        });
++
++        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
++        intent.addCategory(Intent.CATEGORY_OPENABLE);
++        intent.setType("*/*");
++        activity.startActivityForResult(intent, MainActivity.OPEN_FILE_REQUEST_CODE);
++    }
++
+     @Override
+     protected String getHomeTitle() {
+         return getString(R.string.shortcuts);
+diff --git a/app/src/main/java/com/winlator/XServerDisplayActivity.java b/app/src/main/java/com/winlator/XServerDisplayActivity.java
+index 667f1b3..8bcf14a 100644
+--- a/app/src/main/java/com/winlator/XServerDisplayActivity.java
++++ b/app/src/main/java/com/winlator/XServerDisplayActivity.java
+@@ -139,6 +139,10 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
+ 
+     @Override
+     public void onCreate(Bundle savedInstanceState) {
++        try {
++            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
++        }
++        catch (Exception ignored) {}
+         AppUtils.setActivityTheme(this);
+         super.onCreate(savedInstanceState);
+         AppUtils.hideSystemUI(this);
+@@ -496,6 +500,8 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
+         String rootPath = rootFS.getRootDir().getPath();
+         envVars.put("MESA_DEBUG", "silent");
+         envVars.put("MESA_NO_ERROR", "1");
++        envVars.put("STAGING_SHARED_MEMORY", "1");
++        envVars.put("DXVK_LOG_LEVEL", "none");
+         envVars.put("WINEPREFIX", rootPath+RootFS.WINEPREFIX);
+         envVars.put("WINE_DO_NOT_CREATE_DXGI_DEVICE_MANAGER", "1");
+ 
+diff --git a/app/src/main/java/com/winlator/box64/Box64Preset.java b/app/src/main/java/com/winlator/box64/Box64Preset.java
+index 53baebc..f98177d 100644
+--- a/app/src/main/java/com/winlator/box64/Box64Preset.java
++++ b/app/src/main/java/com/winlator/box64/Box64Preset.java
+@@ -7,8 +7,9 @@ public class Box64Preset {
+     public static final String CONSERVATIVE = "CONSERVATIVE";
+     public static final String INTERMEDIATE = "INTERMEDIATE";
+     public static final String PERFORMANCE = "PERFORMANCE";
++    public static final String TURBO = "TURBO";
+     public static final String CUSTOM = "CUSTOM";
+-    public static final String DEFAULT = PERFORMANCE;
++    public static final String DEFAULT = TURBO;
+     public final String id;
+     public final String name;
+ 
+diff --git a/app/src/main/java/com/winlator/box64/Box64PresetManager.java b/app/src/main/java/com/winlator/box64/Box64PresetManager.java
+index 9613285..54355a0 100644
+--- a/app/src/main/java/com/winlator/box64/Box64PresetManager.java
++++ b/app/src/main/java/com/winlator/box64/Box64PresetManager.java
+@@ -70,6 +70,23 @@ public abstract class Box64PresetManager {
+             envVars.put("BOX64_DYNAREC_NATIVEFLAGS", "1");
+             envVars.put("BOX64_DYNAREC_WEAKBARRIER", "2");
+         }
++        else if (id.equals(Box64Preset.TURBO)) {
++            envVars.put("BOX64_DYNAREC_SAFEFLAGS", "0");
++            envVars.put("BOX64_DYNAREC_FASTNAN", "1");
++            envVars.put("BOX64_DYNAREC_FASTROUND", "1");
++            envVars.put("BOX64_DYNAREC_X87DOUBLE", "0");
++            envVars.put("BOX64_DYNAREC_BIGBLOCK", "3");
++            envVars.put("BOX64_DYNAREC_STRONGMEM", "0");
++            envVars.put("BOX64_DYNAREC_FORWARD", "1024");
++            envVars.put("BOX64_DYNAREC_CALLRET", "1");
++            envVars.put("BOX64_DYNAREC_WAIT", "1");
++            envVars.put("BOX64_DYNAREC_NATIVEFLAGS", "1");
++            envVars.put("BOX64_DYNAREC_WEAKBARRIER", "2");
++            envVars.put("BOX64_DYNAREC_HOTPAGE", "1");
++            envVars.put("BOX64_DYNAREC_BLEEDING_EDGE", "1");
++            envVars.put("BOX64_NOBANNER", "1");
++            envVars.put("BOX64_LOG", "0");
++        }
+         else if (id.startsWith(Box64Preset.CUSTOM)) {
+             for (String[] preset : customPresetsIterator(context)) {
+                 if (preset[0].equals(id)) {
+@@ -84,10 +101,11 @@ public abstract class Box64PresetManager {
+ 
+     public static ArrayList<Box64Preset> getPresets(Context context) {
+         ArrayList<Box64Preset> presets = new ArrayList<>();
+-        presets.add(new Box64Preset(Box64Preset.STABILITY, context.getString(R.string.stability)));
+-        presets.add(new Box64Preset(Box64Preset.CONSERVATIVE, context.getString(R.string.conservative)));
+-        presets.add(new Box64Preset(Box64Preset.INTERMEDIATE, context.getString(R.string.intermediate)));
++        presets.add(new Box64Preset(Box64Preset.TURBO, "Turbo (Max FPS)"));
+         presets.add(new Box64Preset(Box64Preset.PERFORMANCE, context.getString(R.string.performance)));
++        presets.add(new Box64Preset(Box64Preset.INTERMEDIATE, context.getString(R.string.intermediate)));
++        presets.add(new Box64Preset(Box64Preset.CONSERVATIVE, context.getString(R.string.conservative)));
++        presets.add(new Box64Preset(Box64Preset.STABILITY, context.getString(R.string.stability)));
+         for (String[] preset : customPresetsIterator(context)) presets.add(new Box64Preset(preset[0], preset[1]));
+         return presets;
+     }
+diff --git a/app/src/main/java/com/winlator/container/Container.java b/app/src/main/java/com/winlator/container/Container.java
+index 2086786..593b324 100644
+--- a/app/src/main/java/com/winlator/container/Container.java
++++ b/app/src/main/java/com/winlator/container/Container.java
+@@ -17,7 +17,7 @@ import java.io.File;
+ import java.util.Iterator;
+ 
+ public class Container {
+-    public static final String DEFAULT_ENV_VARS = "ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=1 TU_DEBUG=noconform";
++    public static final String DEFAULT_ENV_VARS = "ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=1 TU_DEBUG=sysmem,deck_emu,noconform,flushall DXVK_ASYNC=1 DXVK_GPLASYNCCACHE=1 STAGING_SHARED_MEMORY=1 MESA_VK_WSI_PRESENT_MODE=mailbox";
+     public static final String DEFAULT_SCREEN_SIZE = "1280x720";
+     public static final String DEFAULT_AUDIO_DRIVER = AudioDrivers.ALSA;
+     public static final String DEFAULT_DXWRAPPER = DXWrappers.DXVK;
+@@ -426,9 +426,22 @@ public class Container {
+     }
+ 
+     public static String getFallbackCPUList() {
+-        String cpuList = "";
+         int numProcessors = Runtime.getRuntime().availableProcessors();
+-        for (int i = 0; i < numProcessors; i++) cpuList += (!cpuList.isEmpty() ? "," : "")+i;
++        if (numProcessors <= 4) {
++            String cpuList = "";
++            for (int i = 0; i < numProcessors; i++) cpuList += (!cpuList.isEmpty() ? "," : "")+i;
++            return cpuList;
++        }
++
++        // On 8-core Big.LITTLE mobile SoCs (Snapdragon, Dimensity, Tensor),
++        // Cores 0-3 are slow Cortex-A55/A510 efficiency cores.
++        // Pinning Box64 dynarec and Wine to Big & Prime cores (Cores 4-7)
++        // eliminates thread stalling and yields much higher, stable FPS.
++        int startCore = numProcessors >= 8 ? 4 : 2;
++        String cpuList = "";
++        for (int i = startCore; i < numProcessors; i++) {
++            cpuList += (!cpuList.isEmpty() ? "," : "") + i;
++        }
+         return cpuList;
+     }
+ }
+diff --git a/app/src/main/java/com/winlator/container/ContainerManager.java b/app/src/main/java/com/winlator/container/ContainerManager.java
+index 1708187..74242d1 100644
+--- a/app/src/main/java/com/winlator/container/ContainerManager.java
++++ b/app/src/main/java/com/winlator/container/ContainerManager.java
+@@ -4,10 +4,13 @@ import android.content.Context;
+ import android.os.Handler;
+ 
+ import com.winlator.R;
++import com.winlator.box64.Box64Preset;
++import com.winlator.core.AppUtils;
+ import com.winlator.core.Callback;
+ import com.winlator.core.FileUtils;
+ import com.winlator.core.TarCompressorUtils;
+ import com.winlator.core.WineInfo;
++import com.winlator.core.WineThemeManager;
+ import com.winlator.xenvironment.RootFS;
+ 
+ import org.json.JSONArray;
+@@ -71,6 +74,32 @@ public class ContainerManager {
+         FileUtils.symlink(RootFS.USER+"-"+container.id, file.getPath());
+     }
+ 
++    public void createDefaultContainerAsync(Callback<Container> callback) {
++        try {
++            JSONObject data = new JSONObject();
++            data.put("name", "Default");
++            data.put("screenSize", Container.DEFAULT_SCREEN_SIZE);
++            data.put("envVars", Container.DEFAULT_ENV_VARS);
++            data.put("graphicsDriver", GraphicsDrivers.getDefaultDriver(context));
++            data.put("dxwrapper", Container.DEFAULT_DXWRAPPER);
++            data.put("dxwrapperConfig", "");
++            data.put("graphicsDriverConfig", "");
++            data.put("audioDriver", Container.DEFAULT_AUDIO_DRIVER);
++            data.put("wincomponents", Container.DEFAULT_WINCOMPONENTS);
++            data.put("drives", Container.DEFAULT_DRIVES);
++            data.put("hudMode", 0);
++            data.put("startupSelection", Container.STARTUP_SELECTION_ESSENTIAL);
++            data.put("box64Preset", Box64Preset.TURBO);
++            data.put("desktopTheme", WineThemeManager.DEFAULT_DESKTOP_THEME);
++            data.put("cpuList", Container.getFallbackCPUList());
++            data.put("cpuListWoW64", Container.getFallbackCPUList());
++            createContainerAsync(data, callback);
++        }
++        catch (JSONException e) {
++            if (callback != null) callback.call(null);
++        }
++    }
++
+     public void createContainerAsync(final JSONObject data, Callback<Container> callback) {
+         final Handler handler = new Handler();
+         Executors.newSingleThreadExecutor().execute(() -> {
+diff --git a/app/src/main/java/com/winlator/contentdialog/AboutDialog.java b/app/src/main/java/com/winlator/contentdialog/AboutDialog.java
+index 84f2567..50301b0 100644
+--- a/app/src/main/java/com/winlator/contentdialog/AboutDialog.java
++++ b/app/src/main/java/com/winlator/contentdialog/AboutDialog.java
+@@ -22,9 +22,12 @@ public class AboutDialog extends ContentDialog {
+             tvWebpage.setText(Html.fromHtml("<a href=\"https://www.winlator.org\">winlator.org</a>", Html.FROM_HTML_MODE_LEGACY));
+             tvWebpage.setMovementMethod(LinkMovementMethod.getInstance());
+ 
+-            ((TextView)findViewById(R.id.TVAppVersion)).setText(context.getString(R.string.version)+" "+pInfo.versionName);
++            ((TextView)findViewById(R.id.TVAppVersion)).setText("Minilator "+pInfo.versionName+" (Turbo)");
+ 
+             String creditsAndThirdPartyAppsHTML = String.join("<br />",
++                "<b>Minilator</b> - Minimalist High-Performance Winlator Fork",
++                "Optimized Box64 Turbo Dynarec, Asynchronous DXVK GPL, and Big-Core CPU Affinity",
++                "<br />Based on upstream Winlator by BrunoDev85",
+                 "GLIBC Patches by (<a href=\"https://github.com/termux-pacman/glibc-packages\">Termux Pacman</a>)",
+                 "Wine (<a href=\"https://www.winehq.org\">winehq.org</a>)",
+                 "Box86/Box64 by <a href=\"https://github.com/ptitSeb\">ptitseb</a>",
+diff --git a/app/src/main/java/com/winlator/contentdialog/DXVKConfigDialog.java b/app/src/main/java/com/winlator/contentdialog/DXVKConfigDialog.java
+index 5ce355a..283f68e 100644
+--- a/app/src/main/java/com/winlator/contentdialog/DXVKConfigDialog.java
++++ b/app/src/main/java/com/winlator/contentdialog/DXVKConfigDialog.java
+@@ -113,7 +113,14 @@ public class DXVKConfigDialog extends ContentDialog {
+             content += "d3d9.customDeviceDesc = \""+parts[2]+"\"\n";
+         }
+ 
+-        content += "d3d11.constantBufferRangeCheck = \"True\"\n\n";
++        content += "dxvk.gpl = True\n";
++        content += "dxvk.enableAsync = True\n";
++        content += "dxgi.syncInterval = 0\n";
++        content += "d3d11.relaxedBarriers = True\n";
++        content += "d3d11.maxTessFactor = 8\n";
++        content += "d3d9.deferSurfaceCreation = True\n";
++        content += "dxvk.numCompilerThreads = 4\n";
++        content += "d3d11.constantBufferRangeCheck = \"False\"\n\n";
+ 
+         content += "[GTA5.exe]\n";
+         content += "dxgi.maxDeviceMemory = 512\n";
+diff --git a/app/src/main/java/com/winlator/contentdialog/TurnipConfigDialog.java b/app/src/main/java/com/winlator/contentdialog/TurnipConfigDialog.java
+index 1e1afcf..8041586 100644
+--- a/app/src/main/java/com/winlator/contentdialog/TurnipConfigDialog.java
++++ b/app/src/main/java/com/winlator/contentdialog/TurnipConfigDialog.java
+@@ -72,6 +72,11 @@ public class TurnipConfigDialog extends ContentDialog {
+         else if (isForceGMEM(context) && !tuDebug.contains("gmem")) {
+             envVars.put("TU_DEBUG", (!tuDebug.isEmpty() ? tuDebug+"," : "")+"gmem");
+         }
+-        envVars.put("TU_DEBUG", (!tuDebug.isEmpty() ? tuDebug+"," : "")+"deck_emu");
++        tuDebug = envVars.get("TU_DEBUG");
++        if (!tuDebug.contains("deck_emu")) envVars.put("TU_DEBUG", (!tuDebug.isEmpty() ? tuDebug+"," : "")+"deck_emu");
++        tuDebug = envVars.get("TU_DEBUG");
++        if (!tuDebug.contains("noconform")) envVars.put("TU_DEBUG", (!tuDebug.isEmpty() ? tuDebug+"," : "")+"noconform");
++        tuDebug = envVars.get("TU_DEBUG");
++        if (!tuDebug.contains("flushall")) envVars.put("TU_DEBUG", (!tuDebug.isEmpty() ? tuDebug+"," : "")+"flushall");
+     }
+ }
+\ No newline at end of file
+diff --git a/app/src/main/java/com/winlator/core/FileUtils.java b/app/src/main/java/com/winlator/core/FileUtils.java
+index b503fc0..d1c5dee 100644
+--- a/app/src/main/java/com/winlator/core/FileUtils.java
++++ b/app/src/main/java/com/winlator/core/FileUtils.java
+@@ -276,10 +276,43 @@ public abstract class FileUtils {
+     }
+ 
+     public static String getFilePathFromUri(Uri uri) {
++        if (uri == null) return null;
++        String scheme = uri.getScheme();
++        if ("file".equalsIgnoreCase(scheme)) {
++            return uri.getPath();
++        }
++
+         String path = null;
+-        if (uri.getAuthority().equals("com.android.externalstorage.documents")) {
+-            String[] parts = uri.getLastPathSegment().split(":");
+-            if (parts[0].equalsIgnoreCase("primary")) path = Environment.getExternalStorageDirectory() + "/" + parts[1];
++        String authority = uri.getAuthority();
++        if (authority != null) {
++            if (authority.equals("com.android.externalstorage.documents")) {
++                String[] parts = uri.getLastPathSegment().split(":");
++                if (parts.length > 1) {
++                    if (parts[0].equalsIgnoreCase("primary")) {
++                        path = Environment.getExternalStorageDirectory() + "/" + parts[1];
++                    }
++                    else {
++                        path = "/storage/" + parts[0] + "/" + parts[1];
++                    }
++                }
++            }
++            else if (authority.equals("com.android.providers.downloads.documents")) {
++                String id = uri.getLastPathSegment();
++                if (id != null) {
++                    if (id.startsWith("raw:")) {
++                        path = id.replaceFirst("raw:", "");
++                    }
++                    else {
++                        String[] parts = id.split(":");
++                        if (parts.length > 1) {
++                            path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS) + "/" + parts[1];
++                        }
++                    }
++                }
++            }
++        }
++        if (path == null && uri.getPath() != null && uri.getPath().startsWith("/storage/")) {
++            path = uri.getPath();
+         }
+         return path;
+     }
+diff --git a/app/src/main/java/com/winlator/core/GameImporter.java b/app/src/main/java/com/winlator/core/GameImporter.java
+new file mode 100644
+index 0000000..0b9f159
+--- /dev/null
++++ b/app/src/main/java/com/winlator/core/GameImporter.java
+@@ -0,0 +1,117 @@
++package com.winlator.core;
++
++import android.content.Context;
++import android.graphics.Bitmap;
++import android.net.Uri;
++
++import com.winlator.box64.Box64Preset;
++import com.winlator.container.Container;
++import com.winlator.container.ContainerManager;
++import com.winlator.win32.PEParser;
++
++import java.io.File;
++import java.io.FileOutputStream;
++
++public class GameImporter {
++    public static void importGame(Context context, Uri fileUri, Callback<Boolean> callback) {
++        String filePath = FileUtils.getFilePathFromUri(fileUri);
++        if (filePath == null || !filePath.toLowerCase().endsWith(".exe")) {
++            if (callback != null) callback.call(false);
++            return;
++        }
++
++        File peFile = new File(filePath);
++        if (!peFile.exists()) {
++            if (callback != null) callback.call(false);
++            return;
++        }
++
++        ContainerManager manager = new ContainerManager(context);
++        if (manager.getContainers().isEmpty()) {
++            manager.createDefaultContainerAsync((container) -> {
++                if (container != null) {
++                    boolean success = createShortcutForExe(container, peFile);
++                    if (callback != null) callback.call(success);
++                }
++                else {
++                    if (callback != null) callback.call(false);
++                }
++            });
++        }
++        else {
++            Container container = manager.getContainers().get(0);
++            boolean success = createShortcutForExe(container, peFile);
++            if (callback != null) callback.call(success);
++        }
++    }
++
++    public static boolean createShortcutForExe(Container container, File peFile) {
++        try {
++            String fullPath = peFile.getAbsolutePath();
++            String dosPath;
++            String downloadPath = AppUtils.DIRECTORY_DOWNLOADS.getAbsolutePath();
++            String storagePath = AppUtils.INTERNAL_STORAGE.getAbsolutePath();
++
++            if (fullPath.startsWith(downloadPath)) {
++                dosPath = "D:" + fullPath.substring(downloadPath.length()).replace("/", "\\");
++            }
++            else if (fullPath.startsWith(storagePath)) {
++                dosPath = "E:" + fullPath.substring(storagePath.length()).replace("/", "\\");
++            }
++            else {
++                dosPath = "E:" + fullPath.replace("/", "\\");
++            }
++
++            // Extract game name
++            String gameName = peFile.getName();
++            if (gameName.toLowerCase().endsWith(".exe")) {
++                gameName = gameName.substring(0, gameName.length() - 4);
++            }
++            try {
++                PEParser.FileVersionInfo info = PEParser.getFileVersionInfo(peFile);
++                if (info != null && info.productName != null && !info.productName.trim().isEmpty()) {
++                    gameName = info.productName.trim();
++                }
++            }
++            catch (Exception ignored) {}
++
++            String safeFileName = gameName.replaceAll("[^a-zA-Z0-9._\\- ]", "_");
++            String iconName = safeFileName.toLowerCase().replace(" ", "_");
++
++            // Extract icon
++            try {
++                Bitmap icon = PEParser.extractIcon(peFile);
++                if (icon != null) {
++                    File iconDir = container.getIconsDir(48);
++                    iconDir.mkdirs();
++                    File iconFile = new File(iconDir, iconName + ".png");
++                    try (FileOutputStream out = new FileOutputStream(iconFile)) {
++                        icon.compress(Bitmap.CompressFormat.PNG, 100, out);
++                    }
++                }
++            }
++            catch (Exception ignored) {}
++
++            // Write .desktop entry
++            File desktopDir = new File(container.getUserDir(), "Desktop");
++            desktopDir.mkdirs();
++            File desktopFile = new File(desktopDir, safeFileName + ".desktop");
++
++            StringBuilder sb = new StringBuilder();
++            sb.append("[Desktop Entry]\n");
++            sb.append("Name=").append(gameName).append("\n");
++            sb.append("Exec=env WINEPREFIX=\"").append(container.getRootDir().getPath()).append("/.wine\" wine \"").append(dosPath).append("\"\n");
++            sb.append("Type=Application\n");
++            sb.append("StartupNotify=true\n");
++            sb.append("Icon=").append(iconName).append("\n\n");
++            sb.append("[Extra Data]\n");
++            sb.append("box64Preset=").append(Box64Preset.TURBO).append("\n");
++            sb.append("screenSize=").append(Container.DEFAULT_SCREEN_SIZE).append("\n");
++
++            return FileUtils.writeString(desktopFile, sb.toString());
++        }
++        catch (Exception e) {
++            return false;
++        }
++    }
++}
+diff --git a/app/src/main/java/com/winlator/xenvironment/RootFSInstaller.java b/app/src/main/java/com/winlator/xenvironment/RootFSInstaller.java
+index 08fbf80..75fb7fc 100644
+--- a/app/src/main/java/com/winlator/xenvironment/RootFSInstaller.java
++++ b/app/src/main/java/com/winlator/xenvironment/RootFSInstaller.java
+@@ -70,6 +70,10 @@ public abstract class RootFSInstaller {
+             if (success) {
+                 rootFS.createRFSVersionFile(LATEST_VERSION);
+                 resetContainerRFSVersions(activity);
++                ContainerManager containerManager = new ContainerManager(activity);
++                if (containerManager.getContainers().isEmpty()) {
++                    containerManager.createDefaultContainerAsync(null);
++                }
+             }
+             else AppUtils.showToast(activity, R.string.unable_to_install_system_files);
+ 
+diff --git a/app/src/main/res/menu/main_menu.xml b/app/src/main/res/menu/main_menu.xml
+index 40a7b19..2753c2b 100644
+--- a/app/src/main/res/menu/main_menu.xml
++++ b/app/src/main/res/menu/main_menu.xml
+@@ -3,9 +3,9 @@
+   xmlns:android="http://schemas.android.com/apk/res/android">
+     <group android:checkableBehavior="single">
+         <item android:icon="@drawable/icon_shortcut" android:id="@+id/menu_item_shortcuts" android:title="@string/shortcuts" />
+-        <item android:icon="@drawable/icon_container" android:id="@+id/menu_item_containers" android:title="@string/containers" />
+         <item android:icon="@drawable/icon_input_controls" android:id="@+id/menu_item_input_controls" android:title="@string/input_controls" />
+         <item android:icon="@drawable/icon_settings" android:id="@+id/menu_item_settings" android:title="@string/settings" />
++        <item android:icon="@drawable/icon_container" android:id="@+id/menu_item_containers" android:title="@string/containers_advanced" />
+         <item android:icon="@drawable/icon_about" android:id="@+id/menu_item_about" android:title="@string/about" />
+     </group>
+ </menu>
+\ No newline at end of file
+diff --git a/app/src/main/res/menu/shortcuts_menu.xml b/app/src/main/res/menu/shortcuts_menu.xml
+index 2418f20..5d5a2dd 100644
+--- a/app/src/main/res/menu/shortcuts_menu.xml
++++ b/app/src/main/res/menu/shortcuts_menu.xml
+@@ -2,6 +2,12 @@
+ <menu
+     xmlns:android="http://schemas.android.com/apk/res/android"
+     xmlns:app="http://schemas.android.com/apk/res-auto">
++    <item
++        android:icon="@drawable/icon_action_bar_add"
++        android:id="@+id/menu_item_add_game"
++        android:title="@string/add_game"
++        app:showAsAction="always" />
++
+     <item
+         android:icon="@drawable/icon_action_bar_new_folder"
+         android:id="@+id/menu_item_new_folder"
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index e943712..f414ef9 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -1,12 +1,14 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-    <string name="app_name">Winlator</string>
++    <string name="app_name">Minilator</string>
+     <string name="run">Run</string>
+     <string name="edit">Edit</string>
+     <string name="remove">Remove</string>
+     <string name="add">Add</string>
+-    <string name="shortcuts">Shortcuts</string>
++    <string name="shortcuts">Game Library</string>
+     <string name="containers">Containers</string>
++    <string name="containers_advanced">Containers (Advanced)</string>
++    <string name="add_game">Add Game (.exe)</string>
+     <string name="input_controls">Input Controls</string>
+     <string name="no_items_to_display">No items to display</string>
+     <string name="new_container">New Container</string>
+@@ -352,10 +354,10 @@
+     <string name="ddraw_wrapper" translatable="false">DDraw Wrapper</string>
+     <string name="renderer">Renderer</string>
+     <string name="default_no_override">Default (No override)</string>
+-    <string name="fgs_notification_channel_desc">Keeps Winlator running in the background so a wine session is not interrupted by Android\'s background process management.</string>
++    <string name="fgs_notification_channel_desc">Keeps Minilator running in the background so a wine session is not interrupted by Android\'s background process management.</string>
+     <string name="fgs_notification_content_container_background">A container session is running in the background</string>
+     <string name="fgs_notification_content_container_foreground">There is a container session running</string>
+-    <string name="fgs_notification_content_else">Winlator is running in the background</string>
++    <string name="fgs_notification_content_else">Minilator is running in the background</string>
+     <string name="save_mem_on_run_from_steam">Save memory on run from Steam</string>
+     <string name="present_mode">Present Mode</string>
+ </resources>
+\ No newline at end of file
+-- 
+2.47.3
+
