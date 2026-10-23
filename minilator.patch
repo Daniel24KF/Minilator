@@ -1,33 +1,3 @@
-From 97aa605a97014b31161317d4bc3ce5b2a717f70e Mon Sep 17 00:00:00 2001
-From: Minilator <dev@minilator.local>
-Date: Thu, 22 Oct 2026 17:18:16 +0000
-Subject: [PATCH] feat: Transform into Minilator (minimalist UI + Turbo FPS
- optimizations)
-
----
- .github/workflows/build-minilator.yml         |  62 ++++++++++
- README.md                                     |  96 +++++++++++---
- app/build.gradle                              |   2 +-
- .../main/java/com/winlator/MainActivity.java  |   2 +-
- .../java/com/winlator/ShortcutsFragment.java  |  40 ++++++
- .../com/winlator/XServerDisplayActivity.java  |   6 +
- .../java/com/winlator/box64/Box64Preset.java  |   3 +-
- .../winlator/box64/Box64PresetManager.java    |  24 +++-
- .../com/winlator/container/Container.java     |  19 ++-
- .../winlator/container/ContainerManager.java  |  29 +++++
- .../winlator/contentdialog/AboutDialog.java   |   5 +-
- .../contentdialog/DXVKConfigDialog.java       |   9 +-
- .../contentdialog/TurnipConfigDialog.java     |   7 +-
- .../java/com/winlator/core/FileUtils.java     |  39 +++++-
- .../java/com/winlator/core/GameImporter.java  | 117 ++++++++++++++++++
- .../xenvironment/RootFSInstaller.java         |   4 +
- app/src/main/res/menu/main_menu.xml           |   2 +-
- app/src/main/res/menu/shortcuts_menu.xml      |   6 +
- app/src/main/res/values/strings.xml           |  10 +-
- 19 files changed, 445 insertions(+), 37 deletions(-)
- create mode 100644 .github/workflows/build-minilator.yml
- create mode 100644 app/src/main/java/com/winlator/core/GameImporter.java
-
 diff --git a/.github/workflows/build-minilator.yml b/.github/workflows/build-minilator.yml
 new file mode 100644
 index 0000000..1a1d762
@@ -581,7 +551,7 @@ index b503fc0..d1c5dee 100644
      }
 diff --git a/app/src/main/java/com/winlator/core/GameImporter.java b/app/src/main/java/com/winlator/core/GameImporter.java
 new file mode 100644
-index 0000000..0b9f159
+index 0000000..2a34aad
 --- /dev/null
 +++ b/app/src/main/java/com/winlator/core/GameImporter.java
 @@ -0,0 +1,117 @@
@@ -636,8 +606,8 @@ index 0000000..0b9f159
 +        try {
 +            String fullPath = peFile.getAbsolutePath();
 +            String dosPath;
-+            String downloadPath = AppUtils.DIRECTORY_DOWNLOADS.getAbsolutePath();
-+            String storagePath = AppUtils.INTERNAL_STORAGE.getAbsolutePath();
++            String downloadPath = AppUtils.DIRECTORY_DOWNLOADS;
++            String storagePath = AppUtils.INTERNAL_STORAGE;
 +
 +            if (fullPath.startsWith(downloadPath)) {
 +                dosPath = "D:" + fullPath.substring(downloadPath.length()).replace("/", "\\");
@@ -656,8 +626,8 @@ index 0000000..0b9f159
 +            }
 +            try {
 +                PEParser.FileVersionInfo info = PEParser.getFileVersionInfo(peFile);
-+                if (info != null && info.productName != null && !info.productName.trim().isEmpty()) {
-+                    gameName = info.productName.trim();
++                if (info != null && info.ProductName != null && !info.ProductName.trim().isEmpty()) {
++                    gameName = info.ProductName.trim();
 +                }
 +            }
 +            catch (Exception ignored) {}
@@ -785,6 +755,6 @@ index e943712..f414ef9 100644
      <string name="present_mode">Present Mode</string>
  </resources>
 \ No newline at end of file
--- 
-2.47.3
-
+diff --git a/gradlew b/gradlew
+old mode 100644
+new mode 100755
